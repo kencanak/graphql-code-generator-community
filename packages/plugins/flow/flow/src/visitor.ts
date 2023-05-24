@@ -58,6 +58,56 @@ export class FlowVisitor extends BaseTypesVisitor<FlowPluginConfig, FlowPluginPa
     return `$ElementType<Scalars, '${name}'>`;
   }
 
+  protected wrapWithListType(str: string): string {
+    return `${this.config.useFlowReadOnlyTypes ? '$ReadOnlyArray' : 'Array'}<${str}>`;
+  }
+
+  getObjectTypeDeclarationBlock(
+    node: ObjectTypeDefinitionNode,
+    originalNode: ObjectTypeDefinitionNode,
+  ): DeclarationBlock {
+    const optionalTypename = this.config.nonOptionalTypename ? '__typename' : '__typename?';
+    const { type, interface: interfacesType } = this._parsedConfig.declarationKind;
+    const allFields = [
+      ...(this.config.addTypename
+        ? [
+            indent(
+              `${this.config.useFlowReadOnlyTypes ? '+' : ''}${optionalTypename}: '${
+                node.name
+              }'${this.getPunctuation(type)}`,
+            ),
+          ]
+        : []),
+      ...node.fields,
+    ] as string[];
+    const interfacesNames = originalNode.interfaces
+      ? originalNode.interfaces.map(i => this.convertName(i))
+      : [];
+
+    const declarationBlock = new DeclarationBlock(this._declarationBlockConfig)
+      .export()
+      .asKind(type)
+      .withName(this.convertName(node))
+      .withComment(node.description as any as string);
+
+    if (type === 'interface' || type === 'class') {
+      if (interfacesNames.length > 0) {
+        const keyword =
+          interfacesType === 'interface' && type === 'class' ? 'implements' : 'extends';
+
+        declarationBlock.withContent(
+          `${keyword} ` + interfacesNames.join(', ') + (allFields.length > 0 ? ' ' : ' {}'),
+        );
+      }
+
+      declarationBlock.withBlock(this.mergeAllFields(allFields, false));
+    } else {
+      this.appendInterfacesAndFieldsToBlock(declarationBlock, interfacesNames, allFields);
+    }
+
+    return declarationBlock;
+  }
+
   InputValueDefinition(
     node: InputValueDefinitionNode,
     key?: number | string,
